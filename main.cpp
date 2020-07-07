@@ -3,6 +3,8 @@
 #include <algorithm>
 #include <iterator>
 #include <queue>
+#include <functional>
+#include <iomanip>
 
 #define _SIZE_WIDTH 	(7)
 #define _SIZE_HEIGHT	(5)
@@ -24,60 +26,111 @@ struct DataDevice{
 //------------------------------------------------------------------
 template<typename T>
 struct Node{
-	Node(T d, Node* p) : data(d), parent(p){}
+	Node(T d) : data(d){}
 	T data;
 	std::list<Node*> children;
-	Node* parent;
+	std::list<Node*> parents;
 };
 //------------------------------------------------------------------
-template<typename T>
-class TreeLoader{
+template<typename T, class Equal = std::equal_to<T> >
+class loaderTree{
 	struct ThisNode;
 	class NodeIterator;
 	typedef Node<T> NT;
 	typedef std::list<NT*> LNT;
-	
+	typedef typename LNT::iterator IT;
+	typedef typename LNT::const_iterator CIT;
+	Equal _equal;
 	LNT _roots;
 	LNT _allNodes;
 
 public:
-	typedef typename std::list<NT*>::iterator iterator;
-	typedef typename std::list<NT*>::const_iterator const_iterator;
-	typedef typename std::list<NT*>::reverse_iterator reverse_iterator;
-	typedef typename std::list<NT*>::const_reverse_iterator const_reverse_iterator;
-
-	TreeLoader(){}
-	~TreeLoader(){
+	loaderTree(){}
+	~loaderTree(){
 		_remove(_roots);
 	}
-	NT* get(int number){
-		ThisNode thisNode(number);
-		return _get(_roots, thisNode);
+	bool add(const T& t, const T& p){
+		NT* node = _find(t);
+		NT* parent = _find(p);
+		if(!node && parent){
+			node = new NT(t);
+			node->parents = parent->parents;
+			node->parents.push_front(parent);
+			parent->children.push_back(node);
+			_updateAllNodes();
+			return true;
+		}
+		return false;
 	}
-	NT* add(T data, NT* parent = NULL){
-		NT* n = new NT(data, parent);
-		if(parent)
-			parent->children.push_back(n);
-		else 
-			_roots.push_back(n);
-		_updateAllNodes();
-		return n;
+	bool add(const T& t){
+		NT* node = _find(t);
+		if(!node){
+			node = new NT(t);
+			_roots.push_back(node);
+			_updateAllNodes();
+			return true;
+		}
+		return false;
 	}
-	inline iterator begin(){return _allNodes.begin();}
-	inline iterator end(){return _allNodes.end();}
+	//..............................................................
+	class iterator : public std::iterator<std::bidirectional_iterator_tag, T>{
+		IT _hIt;
+	public:
+		iterator(IT hIt) : _hIt(hIt){}
+		iterator& operator++(){
+            ++_hIt;
+            return *this;
+        }
+		iterator operator++(int){
+            iterator tmp(*this);
+            ++_hIt;
+            return tmp;
+        }
+        iterator& operator--(){
+            --_hIt;
+            return *this;
+        }
+        iterator operator--(int){
+            iterator tmp(*this);
+            --_hIt;
+            return tmp;
+        }
+        bool operator==(const iterator& other)const{
+            return _hIt == other._hIt;
+        }
+        bool operator!=(const iterator& other)const{
+            return !(*this == other);
+        }
+        T* operator->(){return &((*_hIt)->data);}
+        T& operator*(){return (*_hIt)->data;}
+	};
+	typedef std::reverse_iterator<iterator> reverse_iterator;
+	//..............................................................
+	inline iterator h_begin(){return iterator(_allNodes.begin());}
+	inline iterator h_end(){return iterator(_allNodes.end());}
 
-	inline const_iterator cbegin(){return _allNodes.cbegin();}
-	inline const_iterator cend(){return _allNodes.cend();}
+	inline reverse_iterator h_rbegin(){return reverse_iterator(this->h_end());}
+	inline reverse_iterator h_rend(){return reverse_iterator(this->h_begin());}
 
-	inline reverse_iterator rbegin(){return _allNodes.rbegin();}
-	inline reverse_iterator rend(){return _allNodes.rend();}
+	iterator v_begin(const T& t){
+		NT* node = _find(t);
+		if(node)
+			return iterator(node->parents.begin());
+		return this->h_end();
+	}
+	iterator v_end(const T& t){
+		NT* node = _find(t);
+		if(node)
+			return iterator(node->parents.end());
+		return this->h_end();
+	}
 
-	inline const_reverse_iterator crbegin(){return _allNodes.crbegin();}
-	inline const_reverse_iterator crend(){return _allNodes.crend();}
+	inline reverse_iterator v_rbegin(){return reverse_iterator(this->v_end());}
+	inline reverse_iterator v_rend(){return reverse_iterator(this->v_begin());}
 
 private:
-	TreeLoader& operator=(const TreeLoader&);
-	TreeLoader(const TreeLoader&);
+	loaderTree& operator=(const loaderTree&);
+	loaderTree(const loaderTree&);
 
 	void _updateAllNodes(){
 		_allNodes.clear();
@@ -85,76 +138,95 @@ private:
 	}
 	void __updateAllNodes(){
 	    std::queue<NT*> vertex;
-	    for(iterator i = _roots.begin(); i != _roots.end(); ++i)
+	    for(IT i = _roots.begin(); i != _roots.end(); ++i)
 	    	vertex.push(*i);
 	    while (!vertex.empty()){
 	        NT* current = vertex.front();
 	        vertex.pop();
 	        _allNodes.push_back(current);
-	        for(iterator i = current->children.begin(); i != current->children.end(); ++i)
+	        for(IT i = current->children.begin(); i != current->children.end(); ++i)
 	        	vertex.push(*i);
 	    }		
 	}
 	void _remove(LNT& nodes){
-		for(iterator i = nodes.begin(); i != nodes.end();){
+		for(IT i = nodes.begin(); i != nodes.end();){
 			_remove((*i)->children);
 			delete *i;
 			i = nodes.erase(i);
 		}
 	}
-	NT* _get(LNT& nodes, const ThisNode& thisNode){	
-		iterator it = std::find_if(nodes.begin(), nodes.end(), thisNode);
-		if(it == nodes.end()){
-			NT* node = NULL;
-			for(iterator i = nodes.begin(); i != nodes.end(); ++i){
-				node = _get((*i)->children, thisNode);
-				if(node != NULL) 
-					break;
-			}
-			return node;
+	NT* _find(const T& t)const{
+		return __find(_roots, t);
+	}
+	NT* __find(const LNT& nodes, const T& t)const{
+		for(CIT i = nodes.begin(); i != nodes.end(); ++i){
+			if(_equal((*i)->data, t))
+				return *i;
+			NT* node = __find((*i)->children, t);
+			if(node) 
+	 			return node;
 		}
-		return *it;
+		return NULL;
 	}
 	int _maxDeep(LNT& nodes){
 		int res = 0;
-		for(iterator i = nodes.begin(); i != nodes.end(); ++i){
+		for(IT i = nodes.begin(); i != nodes.end(); ++i){
 			res = std::max(_maxDeep((*i)->children), res);
 		}
 		return res + 1;
 	}
-	//..............................................................
-	struct ThisNode{
-		int _num;
-		ThisNode(int num) : _num(num){}
-		bool operator()(NT* node)const{return (node->data.num) == _num;}
-	};
 };
 //------------------------------------------------------------------
+	// struct ThisNode{
+	// 	int _num;
+	// 	ThisNode(int num) : _num(num){}
+	// 	bool operator()(NT* node)const{return (node->data.num) == _num;}
+	// };
+//------------------------------------------------------------------
 int main(int argc, char const *argv[]){
-	TreeLoader<int> lT;
-	
-	Node<int>*n = lT.add(1);
-	Node<int>*n2 = lT.add(11, n);
-	Node<int>*n3 = lT.add(111, n2);
+	loaderTree<int> lT;
+	int n = 1, n2 = 11, n3 = 111; 
+
+	lT.add(n);
+	lT.add(n2, n);
+	lT.add(n3, n2);
 	lT.add(1111, n3);
 	lT.add(112, n2);
 	lT.add(12, n);
-	n2 = lT.add(13, n);
+	n2  = 13;
+	lT.add(n2, n);
 	lT.add(131, n2);
 	lT.add(14, n);
 
-	n = lT.add(2);
-	n2 = lT.add(21, n);
-	n3 = lT.add(211, n2);
+	n = 2, n2 = 21, n3 = 211; 
+	lT.add(n);
+	lT.add(n2, n);
+	lT.add(n3, n2);
 	lT.add(2111, n3);
 	lT.add(212, n2);
 	lT.add(22, n);
-	n2 = lT.add(13, n);
+	n2 = 23;
+	lT.add(n2, n);
 	lT.add(231, n2);
 	lT.add(24, n);
 
-	for(TreeLoader<int>::iterator i = lT.begin(); i != lT.end(); ++i)
-		std::cout << (*i)->data << " ";
+	//1 2 11 12 13 14 21 22 13 24 111 112 131 211 212 231 1111 2111
+	for(loaderTree<int>::iterator i = lT.h_begin(); i != lT.h_end(); ++i)
+		std::cout << (*i) << " ";
 	std::cout << std::endl;
+
+	// for(loaderTree<int>::iterator i = lT.h_begin(); i != lT.h_end(); ++i)
+	// 	++(*i); 
+	// //2 3 12 13 14 15 22 23 14 25 112 113 132 212 213 232 1112 2112 
+	// for(loaderTree<int>::iterator i = lT.h_begin(); i != lT.h_end(); ++i)
+	// 	std::cout << (*i) << " ";
+	// std::cout << std::endl;
+
+	for(loaderTree<int>::iterator ih = lT.h_begin(); ih != lT.h_end(); ++ih){
+		std::cout << "child: " << std::setw(4) << (*ih) << ", up_way: ";
+		for(loaderTree<int>::iterator iv = lT.v_begin(*ih); iv != lT.v_end(*ih); ++iv)
+			std::cout << (*iv) << " ";
+		std::cout << std::endl;
+	}
 	return 0;
 }
