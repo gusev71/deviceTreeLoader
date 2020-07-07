@@ -3,44 +3,59 @@
 #include <algorithm>
 #include <iterator>
 #include <queue>
-#include <functional>
-#include <iomanip>
 
-#define _SIZE_WIDTH 	(7)
-#define _SIZE_HEIGHT	(5)
-#define _SIZE_WSTEP		(1)
-#define _SIZE_HSTEP		(1)
+#include <iomanip>
+#include <sstream>
+
+#define _SIZE_WIDTH (12)
 
 enum TypeNode{
-	OLD,
+	OLD_ARM,
 	AVR, 
 	ARM
 };
 //------------------------------------------------------------------
 struct DataDevice{
+	DataDevice(int n) : num(n), type(ARM){} 
 	int num;
 	bool isOn;
 	bool isTransmit;
 	TypeNode type;
+	friend std::ostream& operator<<(std::ostream& os, const DataDevice& data){
+		switch(data.type){
+			case OLD_ARM:
+				os << "old arm";
+				break;
+			case ARM:
+				os << "arm";
+				break;
+			case AVR:
+				os << "avr";
+				break;
+		}
+		os << "_" << data.num;
+		return os;
+	}
+	friend bool operator==(const DataDevice& d1, const DataDevice& d2){
+		return (d1.num) == (d2.num);
+	}
 };
-//------------------------------------------------------------------
 template<typename T>
-struct Node{
-	Node(T d) : data(d){}
-	T data;
-	std::list<Node*> children;
-	std::list<Node*> parents;
-};
-//------------------------------------------------------------------
-template<typename T, class Equal = std::equal_to<T> >
 class loaderTree{
-	struct ThisNode;
-	class NodeIterator;
-	typedef Node<T> NT;
+	//------------------------------------------------------------------
+	struct Node{
+		Node(T d) : data(d){}
+		T data;
+		std::list<Node*> children;
+		std::list<Node*> parents;
+	};
+//------------------------------------------------------------------
+	typedef Node NT;
 	typedef std::list<NT*> LNT;
 	typedef typename LNT::iterator IT;
 	typedef typename LNT::const_iterator CIT;
-	Equal _equal;
+	typedef typename LNT::reverse_iterator RIT;
+	typedef typename LNT::const_reverse_iterator CRIT;
 	LNT _roots;
 	LNT _allNodes;
 
@@ -72,6 +87,15 @@ public:
 		}
 		return false;
 	}
+	void printPostorder(std::stringstream& out)const{
+		for(CIT i = _roots.begin(); i != _roots.end(); ++i){
+			out << "\n||";
+			_printPostorder(out, *i);
+		}
+		out << "\n";
+	}
+	inline std::size_t size(){return _allNodes.size();}
+	inline bool empty(){return _allNodes.empty();}
 	//..............................................................
 	class iterator : public std::iterator<std::bidirectional_iterator_tag, T>{
 		IT _hIt;
@@ -125,8 +149,10 @@ public:
 		return this->h_end();
 	}
 
-	inline reverse_iterator v_rbegin(){return reverse_iterator(this->v_end());}
-	inline reverse_iterator v_rend(){return reverse_iterator(this->v_begin());}
+	inline reverse_iterator v_rbegin(const T& t){return reverse_iterator(this->v_end(t));}
+	inline reverse_iterator v_rend(const T& t){return reverse_iterator(this->v_begin(t));}
+
+	//iterator find(const T& t){return iterator(_allNodes.find(this->_find(t)));}
 
 private:
 	loaderTree& operator=(const loaderTree&);
@@ -160,7 +186,7 @@ private:
 	}
 	NT* __find(const LNT& nodes, const T& t)const{
 		for(CIT i = nodes.begin(); i != nodes.end(); ++i){
-			if(_equal((*i)->data, t))
+			if((*i)->data == t)
 				return *i;
 			NT* node = __find((*i)->children, t);
 			if(node) 
@@ -168,34 +194,46 @@ private:
 		}
 		return NULL;
 	}
-	int _maxDeep(LNT& nodes){
-		int res = 0;
-		for(IT i = nodes.begin(); i != nodes.end(); ++i){
-			res = std::max(_maxDeep((*i)->children), res);
+	void _printPostorder(std::stringstream& out, const NT* p)const{
+		std::stringstream ss_l, ss_l2;
+		ss_l << ">" << p->data << (p->children.size() > 1 ? "_ " : "");
+		ss_l2 << std::setfill('-') << std::setw(_SIZE_WIDTH) << ss_l.str();
+		out << ss_l2.str() ;
+		for(CIT it = p->children.begin(); it != p->children.end(); ++it){
+			if(p->children.size() > 1)
+				_setSpStr(out, *it);
+			
+			_printPostorder(out, *it);
 		}
-		return res + 1;
+		if(p->children.size() > 1)
+			_setSpStr(out, p);
+	}
+	void _setSpStr(std::stringstream& out, const NT* p)const{
+		out << "\n||";
+		for(CRIT it = p->parents.rbegin(); it != p->parents.rend(); ++it)
+				out << std::setw(_SIZE_WIDTH) << ((*it)->children.size() > 1  ? "|" : "");
 	}
 };
 //------------------------------------------------------------------
-	// struct ThisNode{
-	// 	int _num;
-	// 	ThisNode(int num) : _num(num){}
-	// 	bool operator()(NT* node)const{return (node->data.num) == _num;}
-	// };
-//------------------------------------------------------------------
 int main(int argc, char const *argv[]){
-	loaderTree<int> lT;
-	int n = 1, n2 = 11, n3 = 111; 
+	loaderTree<DataDevice> lT;
+	DataDevice n = 1, n2 = 11, n3 = 111; 
 
 	lT.add(n);
 	lT.add(n2, n);
 	lT.add(n3, n2);
 	lT.add(1111, n3);
+	lT.add(11111, 1111);
+	lT.add(11112, 1111);
+	lT.add(111111, 11111);
 	lT.add(112, n2);
+	lT.add(113, n2);
 	lT.add(12, n);
+	lT.add(121, 12);
 	n2  = 13;
 	lT.add(n2, n);
 	lT.add(131, n2);
+	lT.add(132, n2);
 	lT.add(14, n);
 
 	n = 2, n2 = 21, n3 = 211; 
@@ -211,7 +249,11 @@ int main(int argc, char const *argv[]){
 	lT.add(24, n);
 
 	//1 2 11 12 13 14 21 22 13 24 111 112 131 211 212 231 1111 2111
-	for(loaderTree<int>::iterator i = lT.h_begin(); i != lT.h_end(); ++i)
+	for(loaderTree<DataDevice>::iterator i = lT.h_begin(); i != lT.h_end(); ++i)
+		std::cout << (*i) << " ";
+	std::cout << std::endl;
+
+	for(loaderTree<DataDevice>::iterator i = std::find(lT.h_begin(), lT.h_end(), 111); i != lT.h_end(); ++i)
 		std::cout << (*i) << " ";
 	std::cout << std::endl;
 
@@ -222,11 +264,15 @@ int main(int argc, char const *argv[]){
 	// 	std::cout << (*i) << " ";
 	// std::cout << std::endl;
 
-	for(loaderTree<int>::iterator ih = lT.h_begin(); ih != lT.h_end(); ++ih){
+	for(loaderTree<DataDevice>::iterator ih = lT.h_begin(); ih != lT.h_end(); ++ih){
 		std::cout << "child: " << std::setw(4) << (*ih) << ", up_way: ";
-		for(loaderTree<int>::iterator iv = lT.v_begin(*ih); iv != lT.v_end(*ih); ++iv)
+		for(loaderTree<DataDevice>::iterator iv = lT.v_begin(*ih); iv != lT.v_end(*ih); ++iv)
 			std::cout << (*iv) << " ";
 		std::cout << std::endl;
 	}
+	std::stringstream ss;
+	lT.printPostorder(ss);
+	std::cout << ss.str(); 
+
 	return 0;
 }
